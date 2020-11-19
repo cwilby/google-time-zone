@@ -24,6 +24,9 @@ class GoogleTimeZone
     /** @var \DateTimeInterface|null */
     protected $timestamp;
 
+    /** @var bool */
+    protected $isCaching = false;
+
     public function __construct(Client $client = null)
     {
         $this->client = $client ?? new Client();
@@ -50,9 +53,42 @@ class GoogleTimeZone
         return $this;
     }
 
+    public function withCaching(): self
+    {
+        $this->isCaching = true;
+
+        return $this;
+    }
+
+    public function withoutCaching(): self
+    {
+        $this->isCaching = false;
+
+        return $this;
+    }
+
     public function getTimeZoneForCoordinates(string $latitude, string $longitude): ?array
     {
-        $payload = $this->getPayload($latitude, $longitude);
+        $date = $this->timestamp ?? new DateTime();
+
+        if (!$this->isCaching) {
+            return $this->fetchTimeZoneForCoordinates($latitude, $longitude, $date);
+        }
+
+        $cacheKey = sha1(strtolower("google-time-zone-{$this->apiKey}-{$this->language}-{$date->getTimestamp()}-{$latitude}-{$longitude}"));
+        $store = config('google-time-zone.cache.store');
+        $duration = config('google-time-zone.cache.duration');
+
+        return app('cache')
+            ->store($store)
+            ->remember($cacheKey, $duration, function () use ($latitude, $longitude, $date) {
+                return $this->fetchTimeZoneForCoordinates($latitude, $longitude, $date);
+            });
+    }
+
+    protected function fetchTimeZoneForCoordinates($latitude, $longitude, $date): ?array
+    {
+        $payload = $this->getPayload($latitude, $longitude, $date);
 
         $response = $this->client->get($this->endpoint, $payload);
 
@@ -73,10 +109,8 @@ class GoogleTimeZone
         return $this->formatResponse($timezoneResponse);
     }
 
-    protected function getPayload(string $latitude, string $longitude): array
+    protected function getPayload(string $latitude, string $longitude, $date): array
     {
-        $date = $this->timestamp ?? new DateTime();
-
         return [
             'query' => [
                 'key' => $this->apiKey,

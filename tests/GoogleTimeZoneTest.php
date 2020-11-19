@@ -8,6 +8,7 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Middleware;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Facades\Cache;
 use PHPUnit\Framework\TestCase;
 use Spatie\GoogleTimeZone\Exceptions\GoogleTimeZoneException;
 use Spatie\GoogleTimeZone\GoogleTimeZone;
@@ -205,5 +206,43 @@ class GoogleTimeZoneTest extends TestCase
         ]);
 
         (new GoogleTimeZone($client))->getTimeZoneForCoordinates('38.908133', '-77.047119');
+    }
+
+    /** @test */
+    public function it_can_cache_a_fetch_when_caching_enabled()
+    {
+        $client = $this->createFakeClient([
+            new Response(200, [], json_encode([
+                'dstOffset' => 3600,
+                'rawOffset' => -18000,
+                'status' => 'OK',
+                'timeZoneId' => 'America/New_York',
+                'timeZoneName' => 'Eastern Daylight Time',
+            ])),
+        ]);
+
+        $apiKey = 'fake_api_key';
+        $language = null;
+        $date = new DateTime;
+        $latitude = '38.808133';
+        $longitude = '-77.047119';
+
+        $cacheKey = sha1(strtolower("google-time-zone-{$apiKey}-{$language}-{$date->getTimestamp()}-{$latitude}-{$longitude}"));
+        $duration = 9999999;
+
+        $googleTimezone = new GoogleTimeZone($client);
+
+        Cache::shouldReceive('remember')->once()->with($cacheKey, $duration, Closure::class);
+
+        $timezone = $googleTimezone
+            ->withCaching()
+            ->setTimestamp($date)
+            ->setApiKey($apiKey)
+            ->getTimeZoneForCoordinates('38.908133', '-77.047119');
+
+        $this->assertEquals(3600, $timezone['dstOffset']);
+        $this->assertEquals(-18000, $timezone['rawOffset']);
+        $this->assertEquals('America/New_York', $timezone['timeZoneId']);
+        $this->assertEquals('Eastern Daylight Time', $timezone['timeZoneName']);
     }
 }

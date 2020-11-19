@@ -139,6 +139,68 @@ GoogleTimeZone::getTimeZoneForCoordinates('51.2194475', '4.4024643');
 
 When no time zone was found `null` will be returned.
 
+## Caching
+
+It is possible to reduce costs by caching responses from Google.
+
+You should create a dedicated cache store to be able to clear this cache without affecting your existing cache store.
+
+To do this, add add another redis store entry in `config/database.php`.
+
+```php
+    "redis" => [
+        // ...
+        "timezone-cache" => [ // choose an appropriate name
+            'host' => env('REDIS_HOST', '192.168.10.10'),
+            'password' => env('REDIS_PASSWORD', null),
+            'port' => env('REDIS_PORT', 6379),
+            'database' => 1, // be sure this number differs from your other redis databases
+        ],
+    ]
+```
+
+Now, add another cache store in `config/cache.php`.
+
+```php
+    "stores" => [
+        // ...
+        "timezone" => [
+            'driver' => 'redis',
+            'connection' => 'timezone-cache',
+        ],
+    ],
+```
+
+Finally, tell this package to use this cache store in `config/google-time-zone.php`.
+
+```php
+    "cache" => [
+        "store" => "timezone",
+
+        // ...
+    ],
+```
+
+Here is how you would then make cached requests.
+
+```php
+GoogleTimeZone::withCaching()->getTimeZoneForCoordinates('51.2194475', '4.4024643');
+
+// ...followed later by
+
+GoogleTimeZone::withCaching()->getTimeZoneForCoordinates('51.2194475', '4.4024643');
+
+/*
+// Will return this array on both calls
+[
+    "dstOffset" => 0
+    "rawOffset" => 3600
+    "timeZoneId" => "Europe/Brussels"
+    "timeZoneName" => "Central European Standard Time"
+]
+*/
+```
+
 ## Postcardware
 
 You're free to use this package, but if it makes it to your production environment we highly appreciate you sending us a postcard from your hometown, mentioning which of our package(s) you are using.
